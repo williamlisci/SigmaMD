@@ -84,6 +84,10 @@ To create a Windows installer, open `SigmaMD.iss` with Inno Setup Compiler and c
 
 SigmaMD includes local KaTeX files for offline math rendering. KaTeX is distributed under the MIT License; see [assets/katex/LICENSE](assets/katex/LICENSE).
 
+## Acknowledgments
+
+ChatGPT (OpenAI) assisted with project planning, implementation guidance, debugging, and documentation during development. The project owner reviewed and tested the application locally.
+
 ## License
 
 SigmaMD's own source code is licensed under the [MIT License](LICENSE).
