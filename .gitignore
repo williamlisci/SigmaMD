@@ -1,0 +1,31 @@
+# Python virtual environments
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# PyInstaller build files
+build/
+dist/
+*.spec
+
+# Installer output
+output/
+*.exe
+
+# Python caches and logs
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+
+# IDE and operating system
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local secrets and configuration
+.env
+.env.*
+!.env.example
