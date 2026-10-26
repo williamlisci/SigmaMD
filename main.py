@@ -3,7 +3,7 @@ from pathlib import Path
 
 import markdown
 
-from PySide6.QtCore import QTimer, QUrl
+from PySide6.QtCore import QEvent, QTimer, QUrl
 from PySide6.QtGui import QAction, QFont, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -46,6 +46,16 @@ class SigmaMD(QMainWindow):
         self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
 
         self.preview = QWebEngineView()
+
+        # Accept Markdown files dragged from Windows File Explorer.
+        # Install the filter on each visible pane because child widgets receive
+        # drag/drop events instead of the main window.
+        self.setAcceptDrops(True)
+        self.editor.setAcceptDrops(True)
+        self.preview.setAcceptDrops(True)
+        self.editor.installEventFilter(self)
+        self.preview.installEventFilter(self)
+
         # Keep KaTeX local/offline while allowing local CSS, JavaScript and fonts.
         settings = self.preview.settings()
         settings.setAttribute(
@@ -133,6 +143,41 @@ class SigmaMD(QMainWindow):
             QKeySequence.StandardKey.SelectAll,
             self.editor.selectAll,
         )
+
+    def eventFilter(self, watched, event):
+        """Open local Markdown files dropped onto either pane."""
+        event_type = event.type()
+
+        if event_type in (QEvent.Type.DragEnter, QEvent.Type.DragMove):
+            path = self._markdown_path_from_event(event)
+            if path is not None:
+                event.acceptProposedAction()
+                return True
+
+        elif event_type == QEvent.Type.Drop:
+            path = self._markdown_path_from_event(event)
+            if path is not None:
+                event.acceptProposedAction()
+                self.open_path(path)
+                return True
+
+        return super().eventFilter(watched, event)
+
+    @staticmethod
+    def _markdown_path_from_event(event) -> Path | None:
+        mime_data = event.mimeData()
+        if not mime_data.hasUrls():
+            return None
+
+        for url in mime_data.urls():
+            if not url.isLocalFile():
+                continue
+
+            path = Path(url.toLocalFile())
+            if path.suffix.lower() in {".md", ".markdown"} and path.is_file():
+                return path
+
+        return None
 
     def schedule_preview(self):
         if not self._loading_file:
