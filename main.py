@@ -4,7 +4,7 @@ from pathlib import Path
 import markdown
 
 from PySide6.QtCore import QTimer, QUrl
-from PySide6.QtGui import QAction, QFont, QKeySequence
+from PySide6.QtGui import QAction, QFont, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -32,6 +32,10 @@ class SigmaMD(QMainWindow):
         super().__init__()
         self.current_path: Path | None = None
         self._loading_file = False
+
+        icon_path = application_dir() / "assets" / "SigmaMD.ico"
+        if icon_path.is_file():
+            self.setWindowIcon(QIcon(str(icon_path)))
 
         self.setMinimumSize(850, 550)
         self.resize(1200, 760)
@@ -288,16 +292,32 @@ if (typeof renderMathInElement === "function") {
             str(self.current_path.parent) if self.current_path else str(Path.cwd()),
             "Markdown files (*.md *.markdown);;All files (*.*)",
         )
-        if not path or not self.maybe_save():
-            return
+        if path:
+            self.open_path(path)
+
+    def open_path(self, file_path: str | Path) -> bool:
+        """Open a Markdown file supplied by the dialog or Windows file association."""
+        path = Path(file_path).expanduser()
+
+        if not path.is_file():
+            QMessageBox.critical(
+                self,
+                "Open failed",
+                f"File không tồn tại hoặc không thể truy cập:\n{path}",
+            )
+            return False
+
+        if not self.maybe_save():
+            return False
 
         try:
-            content = Path(path).read_text(encoding="utf-8-sig")
+            content = path.read_text(encoding="utf-8-sig")
         except (OSError, UnicodeError) as error:
             QMessageBox.critical(self, "Open failed", str(error))
-            return
+            return False
 
-        self.current_path = Path(path)
+        self.preview_timer.stop()
+        self.current_path = path.resolve()
         self._loading_file = True
         self.editor.setPlainText(content)
         self.editor.document().setModified(False)
@@ -305,6 +325,7 @@ if (typeof renderMathInElement === "function") {
         self.update_window_title()
         self.update_preview()
         self.statusBar().showMessage(f"Opened: {self.current_path}", 4000)
+        return True
 
     def save_file(self):
         if self.current_path is None:
@@ -358,6 +379,18 @@ if (typeof renderMathInElement === "function") {
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+
+    icon_path = application_dir() / "assets" / "SigmaMD.ico"
+    if icon_path.is_file():
+        app.setWindowIcon(QIcon(str(icon_path)))
+
     window = SigmaMD()
     window.show()
+
+    # Windows launches the app with the document path as argv[1]
+    # when a user double-clicks a file associated with SigmaMD.
+    if len(sys.argv) > 1:
+        initial_file = sys.argv[1]
+        QTimer.singleShot(0, lambda path=initial_file: window.open_path(path))
+
     sys.exit(app.exec())
