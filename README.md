@@ -1,6 +1,6 @@
 # SigmaMD
 
-A lightweight Markdown editor for Windows 11 with live Markdown preview and offline LaTeX rendering powered by KaTeX.
+A lightweight Markdown editor for Windows 11 with live Markdown preview and offline LaTeX rendering powered by KaTeX. SigmaMD supports opening a Markdown file passed by Windows when the file is associated with the app.
 
 ## Download
 
@@ -70,15 +70,27 @@ python -m PyInstaller `
   --onedir `
   --windowed `
   --name SigmaMD `
+  --icon "assets/SigmaMD.ico" `
   --collect-all pymdownx `
   --hidden-import pymdownx.arithmatex `
   --add-data "assets/katex:assets/katex" `
+  --add-data "assets/SigmaMD.ico:assets" `
   main.py
 ```
 
 The application folder is generated under `dist/SigmaMD/`.
 
-To create a Windows installer, open `SigmaMD.iss` with Inno Setup Compiler and compile it. The installer is configured to package the application folder from `dist/SigmaMD/`.
+Place your Windows icon at `assets/SigmaMD.ico` before building. To create a Windows installer, open `SigmaMD.iss` with Inno Setup Compiler and compile it. The installer expects that icon file and packages the application folder from `dist/SigmaMD/`.
+
+## Open Markdown files by double-clicking
+
+The installer registers SigmaMD as an available handler for `.md` and `.markdown` files. Windows 11 may require a one-time default-app selection:
+
+1. Right-click a Markdown file and choose **Open with** → **Choose another app**.
+2. Select **SigmaMD**. If needed, browse to the installed `SigmaMD.exe`.
+3. Select **Always use this app to open .md files** and confirm.
+
+If Windows continues opening another editor, go to **Settings → Apps → Default apps**, search for `.md`, and select SigmaMD. Repeat for `.markdown` if you use that extension.
 
 ## KaTeX assets
 
