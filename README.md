@@ -86,4 +86,6 @@ SigmaMD includes local KaTeX files for offline math rendering. KaTeX is distribu
 
 ## License
 
-No license has been specified for the SigmaMD project itself. Unless a license is added, do not assume that the project source may be redistributed or reused under an open-source license.
+SigmaMD's own source code is licensed under the [MIT License](LICENSE).
+
+Third-party libraries and bundled assets remain subject to their respective licenses. See the license files and notices included with those components.
