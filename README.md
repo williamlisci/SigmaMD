@@ -1,57 +1,69 @@
-
 # SigmaMD
 
-A lightweight Markdown editor for Windows with offline LaTeX math rendering.
+A lightweight Markdown editor for Windows 11 with live Markdown preview and offline LaTeX rendering powered by KaTeX.
+
+## Download
+
+**[Download SigmaMD 1.0.0 for Windows (64-bit)](https://github.com/williamlisci/SigmaMD/releases/download/v1.0.0/SigmaMD-Setup-1.0.0.exe)**
+
+Or visit the [Releases page](https://github.com/williamlisci/SigmaMD/releases) to see all versions.
+
+Download the installer and run `SigmaMD-Setup-1.0.0.exe`. The application bundles its runtime and local KaTeX assets; Python is not required to use the installed application.
 
 ## Features
 
-- Open, edit, and save Markdown files.
-- Live Markdown preview.
-- Render LaTeX math expressions using KaTeX.
-- Offline math rendering with locally bundled KaTeX assets.
-- Split-pane editor and preview.
-- Windows executable and installer support.
+- Open, edit, and save `.md` and `.markdown` files.
+- Live Markdown preview in a split-pane interface.
+- Render LaTeX math using locally bundled KaTeX.
+- Support common inline and display math delimiters: `$...$`, `\\(...\\)`, `$$...$$`, and `\\[...\\]`.
+- Work offline for math rendering after installation.
+- Warn before closing or replacing unsaved edits.
 
-## Technology Stack
+## Technology
 
 - Python 3.15.2
-- PySide6
-- Qt WebEngine
+- PySide6 and Qt WebEngine
 - Python-Markdown
 - PyMdown Extensions (Arithmatex)
 - KaTeX
 - PyInstaller
 - Inno Setup
 
-## Requirements
+## Run from source
+
+### Requirements
 
 - Windows 11, 64-bit
-- Python 3.15.2 for running from source
+- Python 3.15.2
+- Git (optional)
 
-## Run from Source
+Clone the repository and enter the project directory:
+
+```powershell
+git clone https://github.com/williamlisci/SigmaMD.git
+cd SigmaMD
+```
 
 Create and activate a virtual environment:
 
 ```powershell
 py -3.15 -m venv .venv
-.\.venv\Scripts\Activate.ps1
+.\\.venv\\Scripts\\Activate.ps1
 ```
 
-Install dependencies:
+Install dependencies and run the application:
 
 ```powershell
 python -m pip install -r requirements.txt
-```
-
-Run SigmaMD:
-
-```powershell
 python main.py
 ```
 
-## Build the Windows Application
+## Build the Windows application
+
+Install PyInstaller in the active virtual environment, then run:
 
 ```powershell
+python -m pip install pyinstaller
 python -m PyInstaller `
   --noconfirm `
   --clean `
@@ -64,14 +76,14 @@ python -m PyInstaller `
   main.py
 ```
 
-The application will be generated in `dist/SigmaMD/`.
+The application folder is generated under `dist/SigmaMD/`.
 
-## KaTeX Assets
+To create a Windows installer, open `SigmaMD.iss` with Inno Setup Compiler and compile it. The installer is configured to package the application folder from `dist/SigmaMD/`.
 
-SigmaMD bundles KaTeX locally to render mathematical expressions without requiring an Internet connection.
+## KaTeX assets
 
-KaTeX is distributed under the MIT License. See `assets/katex/LICENSE`.
+SigmaMD includes local KaTeX files for offline math rendering. KaTeX is distributed under the MIT License; see [assets/katex/LICENSE](assets/katex/LICENSE).
 
 ## License
 
-No
+No license has been specified for the SigmaMD project itself. Unless a license is added, do not assume that the project source may be redistributed or reused under an open-source license.
