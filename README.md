@@ -4,11 +4,11 @@ A lightweight Markdown editor for Windows 11 with live Markdown preview and offl
 
 ## Download
 
-**[Download SigmaMD 1.0.0 for Windows (64-bit)](https://github.com/williamlisci/SigmaMD/releases/download/v1.0.0/SigmaMD-Setup-1.0.0.exe)**
+**[Download SigmaMD 1.0.1 for Windows (64-bit)](https://github.com/williamlisci/SigmaMD/releases/download/v1.0.1/SigmaMD-Setup-1.0.1.exe)**
 
 Or visit the [Releases page](https://github.com/williamlisci/SigmaMD/releases) to see all versions.
 
-Download the installer and run `SigmaMD-Setup-1.0.0.exe`. The application bundles its runtime and local KaTeX assets; Python is not required to use the installed application.
+Download the installer and run `SigmaMD-Setup-1.0.1.exe`. The application bundles its runtime and local KaTeX assets; Python is not required to use the installed application.
 
 ## Features
 
