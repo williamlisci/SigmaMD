@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QSplitter,
+    QWidget,
 )
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -47,14 +48,18 @@ class SigmaMD(QMainWindow):
 
         self.preview = QWebEngineView()
 
-        # Accept Markdown files dragged from Windows File Explorer.
-        # Install the filter on each visible pane because child widgets receive
-        # drag/drop events instead of the main window.
+        # Accept files dragged from Windows File Explorer. Qt scroll areas
+        # deliver drop events to their viewport, and WebEngine may deliver them
+        # to internal child widgets, so install the filter throughout both panes.
+        self._drop_filter_targets: list[QWidget] = []
         self.setAcceptDrops(True)
-        self.editor.setAcceptDrops(True)
-        self.preview.setAcceptDrops(True)
-        self.editor.installEventFilter(self)
-        self.preview.installEventFilter(self)
+        self._install_drop_filters(self.editor)
+        self._install_drop_filters(self.editor.viewport())
+        self._install_drop_filters(self.preview)
+        self.preview.loadFinished.connect(
+            lambda _ok: self._install_drop_filters(self.preview)
+        )
+        QTimer.singleShot(0, self._install_all_drop_filters)
 
         # Keep KaTeX local/offline while allowing local CSS, JavaScript and fonts.
         settings = self.preview.settings()
@@ -144,9 +149,32 @@ class SigmaMD(QMainWindow):
             self.editor.selectAll,
         )
 
+    def _install_drop_filters(self, root: QWidget):
+        """Install drag/drop interception on a widget and its current children."""
+        targets = [root, *root.findChildren(QWidget)]
+        for target in targets:
+            if any(target is installed for installed in self._drop_filter_targets):
+                continue
+            target.setAcceptDrops(True)
+            target.installEventFilter(self)
+            self._drop_filter_targets.append(target)
+
+    def _install_all_drop_filters(self):
+        """Re-scan both panes because Qt WebEngine may create internal widgets lazily."""
+        self._install_drop_filters(self)
+        self._install_drop_filters(self.editor)
+        self._install_drop_filters(self.editor.viewport())
+        self._install_drop_filters(self.preview)
+
     def eventFilter(self, watched, event):
-        """Open local Markdown files dropped onto either pane."""
+        """Open local Markdown files dropped onto the editor or WebEngine pane."""
         event_type = event.type()
+
+        # WebEngine creates internal child widgets after initialisation. Re-scan
+        # on the next event-loop turn so drops on those widgets are intercepted.
+        if event_type == QEvent.Type.ChildAdded:
+            QTimer.singleShot(0, self._install_all_drop_filters)
+            return super().eventFilter(watched, event)
 
         if event_type in (QEvent.Type.DragEnter, QEvent.Type.DragMove):
             path = self._markdown_path_from_event(event)
