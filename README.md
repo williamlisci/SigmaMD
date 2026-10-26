@@ -13,6 +13,7 @@ Download the installer and run `SigmaMD-Setup-1.0.0.exe`. The application bundle
 ## Features
 
 - Open, edit, and save `.md` and `.markdown` files.
+- Drag and drop local `.md` or `.markdown` files onto the editor or preview pane to open them.
 - Live Markdown preview in a split-pane interface.
 - Render LaTeX math using locally bundled KaTeX.
 - Support common inline and display math delimiters: `$...$`, `\\(...\\)`, `$$...$$`, and `\\[...\\]`.
