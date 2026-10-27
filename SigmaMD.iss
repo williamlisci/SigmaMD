@@ -1,5 +1,5 @@
 #define MyAppName "SigmaMD"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "SigmaMD"
 #define MyAppExeName "SigmaMD.exe"
 #define MyAppIcon "assets\SigmaMD.ico"
@@ -14,7 +14,7 @@ DefaultGroupName=SigmaMD
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=output
-OutputBaseFilename=SigmaMD-Setup-1.0.1
+OutputBaseFilename=SigmaMD-Setup-1.0.2
 SetupIconFile={#MyAppIcon}
 ChangesAssociations=yes
 Compression=lzma2

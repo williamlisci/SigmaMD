@@ -33,6 +33,7 @@ class SigmaMD(QMainWindow):
         super().__init__()
         self.current_path: Path | None = None
         self._loading_file = False
+        self.autosave_enabled = True
 
         icon_path = application_dir() / "assets" / "SigmaMD.ico"
         if icon_path.is_file():
@@ -86,6 +87,11 @@ class SigmaMD(QMainWindow):
         self.preview_timer.setInterval(300)
         self.preview_timer.timeout.connect(self.update_preview)
         self.editor.textChanged.connect(self.schedule_preview)
+        self.autosave_timer = QTimer(self)
+        self.autosave_timer.setSingleShot(True)
+        self.autosave_timer.setInterval(5000)
+        self.autosave_timer.timeout.connect(self.autosave_file)
+        self.editor.textChanged.connect(self.schedule_autosave)
         self.editor.document().modificationChanged.connect(
             self.update_window_title
         )
@@ -120,6 +126,15 @@ class SigmaMD(QMainWindow):
             QKeySequence.StandardKey.SaveAs,
             self.save_file_as,
         )
+        file_menu.addSeparator()
+        self.autosave_action = self.create_action(
+            file_menu,
+            "Autosave after 5 seconds",
+            None,
+            self.set_autosave_enabled,
+        )
+        self.autosave_action.setCheckable(True)
+        self.autosave_action.setChecked(self.autosave_enabled)
         file_menu.addSeparator()
         self.create_action(
             file_menu, "E&xit", QKeySequence.StandardKey.Quit, self.close
@@ -210,6 +225,29 @@ class SigmaMD(QMainWindow):
     def schedule_preview(self):
         if not self._loading_file:
             self.preview_timer.start()
+
+    def schedule_autosave(self):
+        if not self._loading_file and self.autosave_enabled:
+            self.autosave_timer.start()
+
+    def set_autosave_enabled(self, enabled: bool):
+        self.autosave_enabled = enabled
+        if enabled:
+            self.schedule_autosave()
+        else:
+            self.autosave_timer.stop()
+
+    def autosave_file(self):
+        if not self.autosave_enabled or not self.editor.document().isModified():
+            return
+        if self.current_path is None:
+            self.statusBar().showMessage(
+                "Save this Markdown file first to use autosave", 4000
+            )
+            return
+        if self.current_path.suffix.lower() not in {".md", ".markdown"}:
+            return
+        self.save_file(is_autosave=True)
 
     def update_preview(self):
         source = self.editor.toPlainText()
@@ -400,9 +438,10 @@ if (typeof renderMathInElement === "function") {
         self.statusBar().showMessage(f"Opened: {self.current_path}", 4000)
         return True
 
-    def save_file(self):
+    def save_file(self, is_autosave: bool = False):
         if self.current_path is None:
             return self.save_file_as()
+        self.autosave_timer.stop()
         try:
             self.current_path.write_text(self.editor.toPlainText(), encoding="utf-8")
         except OSError as error:
@@ -411,7 +450,8 @@ if (typeof renderMathInElement === "function") {
 
         self.editor.document().setModified(False)
         self.update_window_title()
-        self.statusBar().showMessage(f"Saved: {self.current_path}", 4000)
+        status = "Autosaved" if is_autosave else "Saved"
+        self.statusBar().showMessage(f"{status}: {self.current_path}", 4000)
         return True
 
     def save_file_as(self):
