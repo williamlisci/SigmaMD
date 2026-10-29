@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -34,6 +35,13 @@ class SigmaMD(QMainWindow):
         self.current_path: Path | None = None
         self._loading_file = False
         self.autosave_enabled = True
+        self._preview_ready = False
+        self._preview_loading = False
+        self._preview_template_loading = False
+        self._pending_preview_body: str | None = None
+        self._syncing_editor_scroll = False
+        self._editor_scroll_generation = 0
+        self._preview_scroll_generation = 0
 
         icon_path = application_dir() / "assets" / "SigmaMD.ico"
         if icon_path.is_file():
@@ -60,6 +68,13 @@ class SigmaMD(QMainWindow):
         self.preview.loadFinished.connect(
             lambda _ok: self._install_drop_filters(self.preview)
         )
+        self.preview.loadFinished.connect(self._on_preview_load_finished)
+        self.preview.page().scrollPositionChanged.connect(
+            self.sync_editor_scroll
+        )
+        self.editor.verticalScrollBar().valueChanged.connect(
+            self.sync_preview_scroll
+        )
         QTimer.singleShot(0, self._install_all_drop_filters)
 
         # Keep KaTeX local/offline while allowing local CSS, JavaScript and fonts.
@@ -82,10 +97,6 @@ class SigmaMD(QMainWindow):
         self.setCentralWidget(splitter)
         self.statusBar().showMessage("Sẵn sàng")
 
-        self.preview_timer = QTimer(self)
-        self.preview_timer.setSingleShot(True)
-        self.preview_timer.setInterval(300)
-        self.preview_timer.timeout.connect(self.update_preview)
         self.editor.textChanged.connect(self.schedule_preview)
         self.autosave_timer = QTimer(self)
         self.autosave_timer.setSingleShot(True)
@@ -222,13 +233,13 @@ class SigmaMD(QMainWindow):
 
         return None
 
-    def schedule_preview(self):
-        if not self._loading_file:
-            self.preview_timer.start()
-
     def schedule_autosave(self):
         if not self._loading_file and self.autosave_enabled:
             self.autosave_timer.start()
+
+    def schedule_preview(self):
+        if not self._loading_file:
+            self.update_preview()
 
     def set_autosave_enabled(self, enabled: bool):
         self.autosave_enabled = enabled
@@ -263,6 +274,7 @@ class SigmaMD(QMainWindow):
                 "pymdownx.arithmatex": {"generic": True},
             },
         )
+        self._pending_preview_body = body
 
         katex_dir = application_dir() / "assets" / "katex"
         css_file = katex_dir / "katex.min.css"
@@ -275,6 +287,9 @@ class SigmaMD(QMainWindow):
             if not path.is_file()
         ]
         if missing:
+            self._preview_ready = False
+            self._preview_template_loading = False
+            self._preview_loading = True
             details = "<br>".join(missing)
             error_html = f"""<!DOCTYPE html>
 <html lang="vi"><meta charset="utf-8">
@@ -290,11 +305,21 @@ class SigmaMD(QMainWindow):
         js_url = QUrl.fromLocalFile(str(js_file.resolve())).toString()
         render_url = QUrl.fromLocalFile(str(render_file.resolve())).toString()
 
+        # Keep links/images relative to the Markdown file, not the application folder.
+        base_dir = self.current_path.parent if self.current_path else Path.cwd()
+        base_url = QUrl.fromLocalFile(str(base_dir.resolve()) + "/")
+        if self._preview_ready:
+            self._apply_preview_body(body, base_url.toString())
+            return
+        if self._preview_loading:
+            return
+
         template = r"""<!DOCTYPE html>
 <html lang="vi">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<base href="__BASE_URL__">
 <link rel="stylesheet" href="__KATEX_CSS__">
 <style>
 body {
@@ -306,6 +331,7 @@ body {
     margin: 0;
     padding: 24px;
     overflow-wrap: anywhere;
+    overflow-anchor: none;
 }
 main { max-width: 950px; margin: 0 auto; }
 h1, h2, h3, h4 { line-height: 1.35; margin-top: 1.5em; }
@@ -336,7 +362,10 @@ if (typeof renderMathInElement === "function") {
             {left: "\\(", right: "\\)", display: false},
             {left: "$", right: "$", display: false}
         ],
-        ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code", "option"],
+        ignoredTags: [
+            "script", "noscript", "style", "textarea", "pre",
+            "code", "option"
+        ],
         throwOnError: false
     });
 } else {
@@ -350,16 +379,109 @@ if (typeof renderMathInElement === "function") {
 </html>"""
 
         html = (
-            template.replace("__KATEX_CSS__", css_url)
+            template.replace("__BASE_URL__", base_url.toString())
+            .replace("__KATEX_CSS__", css_url)
             .replace("__KATEX_JS__", js_url)
             .replace("__KATEX_RENDER__", render_url)
             .replace("<!-- MARKDOWN_CONTENT -->", body)
         )
-
-        # Keep links/images relative to the Markdown file, not the application folder.
-        base_dir = self.current_path.parent if self.current_path else Path.cwd()
-        base_url = QUrl.fromLocalFile(str(base_dir.resolve()) + "/")
+        self._preview_loading = True
+        self._preview_template_loading = True
         self.preview.setHtml(html, base_url)
+
+    def _on_preview_load_finished(self, success: bool):
+        if not self._preview_loading:
+            return
+
+        self._preview_loading = False
+        if not self._preview_template_loading:
+            return
+
+        self._preview_template_loading = False
+        if not success:
+            return
+
+        self._preview_ready = True
+        base_dir = self.current_path.parent if self.current_path else Path.cwd()
+        base_url = QUrl.fromLocalFile(str(base_dir.resolve()) + "/").toString()
+        self._apply_preview_body(self._pending_preview_body or "", base_url)
+        self.sync_preview_scroll(self.editor.verticalScrollBar().value())
+
+    def _apply_preview_body(self, body: str, base_url: str):
+        script = f"""(() => {{
+    const main = document.querySelector("main");
+    const base = document.querySelector("base");
+    if (!main || !base) return;
+    const scrollY = window.scrollY;
+    base.href = {json.dumps(base_url)};
+    main.innerHTML = {json.dumps(body)};
+    if (typeof renderMathInElement === "function") {{
+        renderMathInElement(main, {{
+            delimiters: [
+                {{left: "$$", right: "$$", display: true}},
+                {{left: "\\\\[", right: "\\\\]", display: true}},
+                {{left: "\\\\(", right: "\\\\)", display: false}},
+                {{left: "$", right: "$", display: false}}
+            ],
+            ignoredTags: [
+                "script", "noscript", "style", "textarea", "pre",
+                "code", "option"
+            ],
+            throwOnError: false
+        }});
+    }}
+    window.scrollTo(0, scrollY);
+}})();"""
+        self.preview.page().runJavaScript(script)
+
+    def sync_preview_scroll(self, editor_value: int):
+        if not self._preview_ready or self._syncing_editor_scroll:
+            return
+
+        self._editor_scroll_generation += 1
+        scrollbar = self.editor.verticalScrollBar()
+        ratio = editor_value / scrollbar.maximum() if scrollbar.maximum() else 0
+        self.preview.page().runJavaScript(
+            "(() => {"
+            "const max = Math.max(0, "
+            "document.documentElement.scrollHeight - window.innerHeight);"
+            f"window.scrollTo(0, max * {ratio});"
+            "})();"
+        )
+
+    def sync_editor_scroll(self, _position):
+        if not self._preview_ready or self._syncing_editor_scroll:
+            return
+
+        self._preview_scroll_generation += 1
+        editor_generation = self._editor_scroll_generation
+        preview_generation = self._preview_scroll_generation
+        self.preview.page().runJavaScript(
+            "(() => {"
+            "const max = Math.max(0, "
+            "document.documentElement.scrollHeight - window.innerHeight);"
+            "return max ? window.scrollY / max : 0;"
+            "})()",
+            lambda ratio: self._set_editor_scroll(
+                ratio, editor_generation, preview_generation
+            ),
+        )
+
+    def _set_editor_scroll(
+        self, ratio: float, editor_generation: int, preview_generation: int
+    ):
+        if (
+            editor_generation != self._editor_scroll_generation
+            or preview_generation != self._preview_scroll_generation
+            or not isinstance(ratio, (int, float))
+        ):
+            return
+
+        ratio = min(1.0, max(0.0, ratio))
+        scrollbar = self.editor.verticalScrollBar()
+        self._syncing_editor_scroll = True
+        scrollbar.setValue(round(ratio * scrollbar.maximum()))
+        self._syncing_editor_scroll = False
 
     def update_window_title(self, *_):
         name = self.current_path.name if self.current_path else "Untitled.md"
@@ -427,7 +549,6 @@ if (typeof renderMathInElement === "function") {
             QMessageBox.critical(self, "Open failed", str(error))
             return False
 
-        self.preview_timer.stop()
         self.current_path = path.resolve()
         self._loading_file = True
         self.editor.setPlainText(content)

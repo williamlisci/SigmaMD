@@ -11,7 +11,9 @@ visit the [Releases page](https://github.com/williamlisci/SigmaMD/releases) to s
 - Open, edit, and save `.md` and `.markdown` files.
 - Automatically save changes to an open Markdown file after 5 seconds; toggle autosave from the **File** menu.
 - Drag and drop local `.md` or `.markdown` files onto the editor or preview pane to open them.
-- Live Markdown preview in a split-pane interface.
+- Live Markdown preview updates immediately as you edit.
+- Synchronized scrolling: scroll either the editor or preview to follow the same relative position in the document.
+- Editing while reading updates the preview in place without resetting its current scroll position.
 - Render LaTeX math using locally bundled KaTeX.
 - Support common inline and display math delimiters: `$...$`, `\\(...\\)`, `$$...$$`, and `\\[...\\]`.
 - Work offline for math rendering after installation.
