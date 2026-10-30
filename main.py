@@ -4,7 +4,7 @@ from pathlib import Path
 
 import markdown
 
-from PySide6.QtCore import QEvent, QTimer, QUrl
+from PySide6.QtCore import QEvent, QSettings, QTimer, QUrl
 from PySide6.QtGui import QAction, QFont, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -33,6 +33,7 @@ class SigmaMD(QMainWindow):
     def __init__(self):
         super().__init__()
         self.current_path: Path | None = None
+        self.settings = QSettings(APP_NAME, APP_NAME)
         self._loading_file = False
         self.autosave_enabled = True
         self._preview_ready = False
@@ -126,6 +127,16 @@ class SigmaMD(QMainWindow):
         )
         self.create_action(
             file_menu, "&Open...", QKeySequence.StandardKey.Open, self.open_file
+        )
+        file_menu.addSeparator()
+        self.restore_session_action = self.create_action(
+            file_menu,
+            "Restore Previous Session",
+            None,
+            self.restore_previous_session,
+        )
+        self.restore_session_action.setEnabled(
+            bool(self.settings.value("last_opened_file", "", type=str))
         )
         file_menu.addSeparator()
         self.create_action(
@@ -528,6 +539,11 @@ if (typeof renderMathInElement === "function") {
         if path:
             self.open_path(path)
 
+    def restore_previous_session(self):
+        path = self.settings.value("last_opened_file", "", type=str)
+        if path:
+            self.open_path(path)
+
     def open_path(self, file_path: str | Path) -> bool:
         """Open a Markdown file supplied by the dialog or Windows file association."""
         path = Path(file_path).expanduser()
@@ -536,7 +552,7 @@ if (typeof renderMathInElement === "function") {
             QMessageBox.critical(
                 self,
                 "Open failed",
-                f"File không tồn tại hoặc không thể truy cập:\n{path}",
+                f"Không tìm thấy file:\n{path}",
             )
             return False
 
@@ -550,6 +566,7 @@ if (typeof renderMathInElement === "function") {
             return False
 
         self.current_path = path.resolve()
+        self.remember_current_file()
         self._loading_file = True
         self.editor.setPlainText(content)
         self.editor.document().setModified(False)
@@ -558,6 +575,12 @@ if (typeof renderMathInElement === "function") {
         self.update_preview()
         self.statusBar().showMessage(f"Opened: {self.current_path}", 4000)
         return True
+
+    def remember_current_file(self):
+        if self.current_path is None:
+            return
+        self.settings.setValue("last_opened_file", str(self.current_path))
+        self.restore_session_action.setEnabled(True)
 
     def save_file(self, is_autosave: bool = False):
         if self.current_path is None:
@@ -600,6 +623,7 @@ if (typeof renderMathInElement === "function") {
             self.current_path = old_path
             self.update_window_title()
             return False
+        self.remember_current_file()
         self.update_preview()
         return True
 
@@ -621,10 +645,14 @@ if __name__ == "__main__":
     window = SigmaMD()
     window.show()
 
-    # Windows launches the app with the document path as argv[1]
-    # when a user double-clicks a file associated with SigmaMD.
     if len(sys.argv) > 1:
-        initial_file = sys.argv[1]
-        QTimer.singleShot(0, lambda path=initial_file: window.open_path(path))
+        # A file explicitly opened from Windows takes precedence over the session.
+        QTimer.singleShot(0, lambda path=sys.argv[1]: window.open_path(path))
+    else:
+        previous_file = window.settings.value("last_opened_file", "", type=str)
+        if previous_file:
+            QTimer.singleShot(
+                0, lambda path=previous_file: window.open_path(path)
+            )
 
     sys.exit(app.exec())
