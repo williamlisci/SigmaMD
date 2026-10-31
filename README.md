@@ -16,6 +16,9 @@ visit the [Releases page](https://github.com/williamlisci/SigmaMD/releases) to s
 - Live Markdown preview updates immediately as you edit.
 - Synchronized scrolling: scroll either the editor or preview to follow the same relative position in the document.
 - Editing while reading updates the preview in place without resetting its current scroll position.
+- Find text in the editor with **Edit > Find** or **Ctrl+F**, then move between matches with **Next** and **Previous**.
+- Search can optionally match letter case, wraps around the document, and starts with selected text when the Find dialog opens.
+- Show a message when the search text has no matches.
 - Render LaTeX math using locally bundled KaTeX.
 - Support common inline and display math delimiters: `$...$`, `\\(...\\)`, `$$...$$`, and `\\[...\\]`.
 - Work offline for math rendering after installation.

@@ -4,15 +4,29 @@ from pathlib import Path
 
 import markdown
 
-from PySide6.QtCore import QEvent, QSettings, QTimer, QUrl
-from PySide6.QtGui import QAction, QFont, QIcon, QKeySequence
+from PySide6.QtCore import QEvent, QSettings, QTimer, Qt, QUrl
+from PySide6.QtGui import (
+    QAction,
+    QFont,
+    QIcon,
+    QKeySequence,
+    QTextCursor,
+    QTextDocument,
+)
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
+    QDialog,
     QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QPlainTextEdit,
     QSplitter,
+    QVBoxLayout,
     QWidget,
 )
 from PySide6.QtWebEngineCore import QWebEngineSettings
@@ -43,6 +57,10 @@ class SigmaMD(QMainWindow):
         self._syncing_editor_scroll = False
         self._editor_scroll_generation = 0
         self._preview_scroll_generation = 0
+        self.find_dialog = None
+        self.find_input = None
+        self.find_case_sensitive = None
+        self.find_status = None
 
         icon_path = application_dir() / "assets" / "SigmaMD.ico"
         if icon_path.is_file():
@@ -164,6 +182,13 @@ class SigmaMD(QMainWindow):
 
         edit_menu = self.menuBar().addMenu("&Edit")
         self.create_action(
+            edit_menu,
+            "&Find...",
+            QKeySequence.StandardKey.Find,
+            self.show_find_dialog,
+        )
+        edit_menu.addSeparator()
+        self.create_action(
             edit_menu, "Undo", QKeySequence.StandardKey.Undo, self.editor.undo
         )
         self.create_action(
@@ -185,6 +210,84 @@ class SigmaMD(QMainWindow):
             QKeySequence.StandardKey.SelectAll,
             self.editor.selectAll,
         )
+
+    def show_find_dialog(self):
+        if self.find_dialog is None:
+            self.find_dialog = QDialog(self)
+            self.find_dialog.setWindowTitle("Find")
+            self.find_dialog.setWindowModality(Qt.WindowModality.NonModal)
+
+            layout = QVBoxLayout(self.find_dialog)
+            layout.addWidget(QLabel("Find what:", self.find_dialog))
+
+            self.find_input = QLineEdit(self.find_dialog)
+            self.find_input.setClearButtonEnabled(True)
+            self.find_input.returnPressed.connect(self.find_next)
+            layout.addWidget(self.find_input)
+
+            self.find_case_sensitive = QCheckBox(
+                "Match case", self.find_dialog
+            )
+            layout.addWidget(self.find_case_sensitive)
+
+            self.find_status = QLabel("", self.find_dialog)
+            layout.addWidget(self.find_status)
+
+            buttons = QHBoxLayout()
+            previous_button = QPushButton("Previous", self.find_dialog)
+            previous_button.clicked.connect(self.find_previous)
+            buttons.addWidget(previous_button)
+            next_button = QPushButton("Next", self.find_dialog)
+            next_button.clicked.connect(self.find_next)
+            buttons.addWidget(next_button)
+            close_button = QPushButton("Close", self.find_dialog)
+            close_button.clicked.connect(self.find_dialog.hide)
+            buttons.addWidget(close_button)
+            layout.addLayout(buttons)
+
+        selected_text = self.editor.textCursor().selectedText()
+        if selected_text and "\n" not in selected_text:
+            self.find_input.setText(selected_text)
+            self.find_input.selectAll()
+        self.find_dialog.show()
+        self.find_dialog.raise_()
+        self.find_dialog.activateWindow()
+        self.find_input.setFocus()
+
+    def find_next(self):
+        self.find_in_editor()
+
+    def find_previous(self):
+        self.find_in_editor(backward=True)
+
+    def find_in_editor(self, backward=False):
+        search_text = self.find_input.text()
+        if not search_text:
+            self.find_status.clear()
+            return
+
+        flags = QTextDocument.FindFlag(0)
+        if backward:
+            flags |= QTextDocument.FindFlag.FindBackward
+        if self.find_case_sensitive.isChecked():
+            flags |= QTextDocument.FindFlag.FindCaseSensitively
+
+        if self.editor.find(search_text, flags):
+            self.find_status.clear()
+            return
+
+        cursor = self.editor.textCursor()
+        cursor.movePosition(
+            QTextCursor.MoveOperation.End
+            if backward
+            else QTextCursor.MoveOperation.Start
+        )
+        self.editor.setTextCursor(cursor)
+        if self.editor.find(search_text, flags):
+            self.find_status.clear()
+            return
+
+        self.find_status.setText("No matches found")
 
     def _install_drop_filters(self, root: QWidget):
         """Install drag/drop interception on a widget and its current children."""
