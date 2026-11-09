@@ -108,5 +108,3 @@ ChatGPT (OpenAI) assisted with project planning, implementation guidance, debugg
 ## License
 
 SigmaMD's own source code is licensed under the [MIT License](LICENSE).
-
-Third-party libraries and bundled assets remain subject to their respective licenses. See the license files and notices included with those components.
