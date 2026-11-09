@@ -7,6 +7,7 @@ import markdown
 from PySide6.QtCore import QEvent, QSettings, QTimer, Qt, QUrl
 from PySide6.QtGui import (
     QAction,
+    QActionGroup,
     QFont,
     QIcon,
     QKeySequence,
@@ -22,10 +23,13 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QInputDialog,
     QMessageBox,
     QPushButton,
     QPlainTextEdit,
     QSplitter,
+    QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -34,6 +38,11 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 
 
 APP_NAME = "SigmaMD"
+PREVIEW_THEMES = {
+    "light": "Light",
+    "dark": "Dark",
+    "sepia": "Sepia",
+}
 
 
 def application_dir() -> Path:
@@ -48,6 +57,10 @@ class SigmaMD(QMainWindow):
         super().__init__()
         self.current_path: Path | None = None
         self.settings = QSettings(APP_NAME, APP_NAME)
+        saved_theme = self.settings.value("preview_theme", "light", type=str)
+        self.preview_theme = (
+            saved_theme if saved_theme in PREVIEW_THEMES else "light"
+        )
         self._loading_file = False
         self.autosave_enabled = True
         self._preview_ready = False
@@ -73,6 +86,9 @@ class SigmaMD(QMainWindow):
         self.editor.setPlaceholderText("Viết nội dung Markdown tại đây...")
         self.editor.setFont(QFont("Consolas", 11))
         self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.editor.cursorPositionChanged.connect(
+            self.update_selection_toolbar
+        )
 
         self.preview = QWebEngineView()
 
@@ -114,9 +130,14 @@ class SigmaMD(QMainWindow):
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([600, 600])
         self.setCentralWidget(splitter)
+        self._create_selection_toolbar()
         self.statusBar().showMessage("Sẵn sàng")
 
         self.editor.textChanged.connect(self.schedule_preview)
+        self.preview_timer = QTimer(self)
+        self.preview_timer.setSingleShot(True)
+        self.preview_timer.setInterval(200)
+        self.preview_timer.timeout.connect(self.update_preview)
         self.autosave_timer = QTimer(self)
         self.autosave_timer.setSingleShot(True)
         self.autosave_timer.setInterval(5000)
@@ -137,6 +158,146 @@ class SigmaMD(QMainWindow):
         action.triggered.connect(callback)
         menu.addAction(action)
         return action
+
+    def _create_selection_toolbar(self):
+        self.selection_toolbar = QToolBar(self)
+        self.selection_toolbar.setWindowFlags(
+            Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
+        )
+        self.selection_toolbar.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextOnly
+        )
+        self.selection_toolbar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.selection_toolbar.setMovable(False)
+
+        formats = (
+            ("B", "**", "**", "In đậm"),
+            ("I", "*", "*", "In nghiêng"),
+            ("U", "<u>", "</u>", "Gạch chân"),
+            ("S", "~~", "~~", "Gạch ngang"),
+            ("`", "`", "`", "Mã nội dòng"),
+        )
+        for label, prefix, suffix, tooltip in formats:
+            action = self.selection_toolbar.addAction(label)
+            action.setToolTip(tooltip)
+            action.triggered.connect(
+                lambda _checked=False, before=prefix, after=suffix: (
+                    self.format_selection(before, after)
+                )
+            )
+
+        self.selection_toolbar.addSeparator()
+        link_action = self.selection_toolbar.addAction("Link")
+        link_action.setToolTip("Chèn liên kết")
+        link_action.triggered.connect(self.format_selection_as_link)
+        for button in self.selection_toolbar.findChildren(QToolButton):
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.selection_toolbar.adjustSize()
+        self.selection_toolbar.hide()
+
+    def update_selection_toolbar(self):
+        selected_text = self.editor.textCursor().selectedText()
+        self.sync_preview_selection(selected_text)
+        if not selected_text:
+            self.selection_toolbar.hide()
+            return
+
+        cursor_rect = self.editor.cursorRect(self.editor.textCursor())
+        position = self.editor.viewport().mapToGlobal(
+            cursor_rect.bottomLeft()
+        )
+        self.selection_toolbar.adjustSize()
+        screen = QApplication.screenAt(position) or self.screen()
+        available = screen.availableGeometry()
+        x = min(
+            max(position.x(), available.left()),
+            available.right() - self.selection_toolbar.width() + 1,
+        )
+        y = position.y() + 4
+        if y + self.selection_toolbar.height() > available.bottom():
+            y = position.y() - self.selection_toolbar.height() - 4
+        self.selection_toolbar.move(x, y)
+        self.selection_toolbar.show()
+
+    def format_selection(self, prefix: str, suffix: str):
+        cursor = self.editor.textCursor()
+        selected_text = cursor.selectedText()
+        if not selected_text:
+            return
+
+        start = cursor.selectionStart()
+        end = cursor.selectionEnd()
+        before = QTextCursor(cursor)
+        before.setPosition(start)
+        before.movePosition(
+            QTextCursor.MoveOperation.PreviousCharacter,
+            QTextCursor.MoveMode.KeepAnchor,
+            len(prefix),
+        )
+        after = QTextCursor(cursor)
+        after.setPosition(end)
+        after.movePosition(
+            QTextCursor.MoveOperation.NextCharacter,
+            QTextCursor.MoveMode.KeepAnchor,
+            len(suffix),
+        )
+
+        if before.selectedText() == prefix and after.selectedText() == suffix:
+            edit_cursor = QTextCursor(cursor)
+            edit_cursor.setPosition(start - len(prefix))
+            edit_cursor.setPosition(
+                end + len(suffix), QTextCursor.MoveMode.KeepAnchor
+            )
+            edit_cursor.insertText(selected_text)
+            content = selected_text
+            selection_start = start - len(prefix)
+            result_cursor = edit_cursor
+        else:
+            content = selected_text
+            cursor.insertText(f"{prefix}{content}{suffix}")
+            selection_start = start + len(prefix.encode("utf-16-le")) // 2
+            result_cursor = cursor
+
+        result_cursor.setPosition(selection_start)
+        result_cursor.setPosition(
+            selection_start + len(content.encode("utf-16-le")) // 2,
+            QTextCursor.MoveMode.KeepAnchor,
+        )
+        self.editor.setTextCursor(result_cursor)
+        self.editor.setFocus()
+
+    def sync_preview_selection(self, selected_text: str | None = None):
+        if not self._preview_ready:
+            return
+        if selected_text is None:
+            selected_text = self.editor.textCursor().selectedText()
+        selected_text = selected_text.replace("\u2029", "\n")
+        self.preview.page().runJavaScript(
+            "window.syncEditorSelection && "
+            f"window.syncEditorSelection({json.dumps(selected_text)});"
+        )
+
+    def format_selection_as_link(self):
+        cursor = self.editor.textCursor()
+        selected_text = cursor.selectedText()
+        if not selected_text:
+            return
+
+        url, accepted = QInputDialog.getText(
+            self, "Chèn liên kết", "Địa chỉ liên kết:"
+        )
+        if not accepted or not url:
+            return
+
+        start = cursor.selectionStart()
+        cursor.insertText(f"[{selected_text}]({url})")
+        cursor.setPosition(start + 1)
+        cursor.setPosition(
+            start + 1 + len(selected_text.encode("utf-16-le")) // 2,
+            QTextCursor.MoveMode.KeepAnchor,
+        )
+        self.editor.setTextCursor(cursor)
+        self.editor.setFocus()
 
     def create_menus(self):
         file_menu = self.menuBar().addMenu("&File")
@@ -210,6 +371,34 @@ class SigmaMD(QMainWindow):
             QKeySequence.StandardKey.SelectAll,
             self.editor.selectAll,
         )
+
+        view_menu = self.menuBar().addMenu("&View")
+        preview_theme_menu = view_menu.addMenu("Preview Theme")
+        preview_theme_group = QActionGroup(self)
+        preview_theme_group.setExclusive(True)
+        for theme, label in PREVIEW_THEMES.items():
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.setChecked(theme == self.preview_theme)
+            action.triggered.connect(
+                lambda checked, selected_theme=theme: (
+                    self.set_preview_theme(selected_theme) if checked else None
+                )
+            )
+            preview_theme_group.addAction(action)
+            preview_theme_menu.addAction(action)
+
+    def set_preview_theme(self, theme: str):
+        if theme not in PREVIEW_THEMES or theme == self.preview_theme:
+            return
+
+        self.preview_theme = theme
+        self.settings.setValue("preview_theme", theme)
+        if self._preview_ready:
+            self.preview.page().runJavaScript(
+                "document.body.dataset.theme = "
+                f"{json.dumps(theme)};"
+            )
 
     def show_find_dialog(self):
         if self.find_dialog is None:
@@ -353,7 +542,7 @@ class SigmaMD(QMainWindow):
 
     def schedule_preview(self):
         if not self._loading_file:
-            self.update_preview()
+            self.preview_timer.start()
 
     def set_autosave_enabled(self, enabled: bool):
         self.autosave_enabled = enabled
@@ -382,6 +571,7 @@ class SigmaMD(QMainWindow):
                 "fenced_code",
                 "tables",
                 "sane_lists",
+                "pymdownx.tilde",
                 "pymdownx.arithmatex",
             ],
             extension_configs={
@@ -436,35 +626,136 @@ class SigmaMD(QMainWindow):
 <base href="__BASE_URL__">
 <link rel="stylesheet" href="__KATEX_CSS__">
 <style>
+:root {
+    color-scheme: light;
+    --page-background: #fff;
+    --text-color: #20242b;
+    --code-background: #f2f4f7;
+    --blockquote-border: #c8ced8;
+    --blockquote-color: #535b68;
+    --table-border: #d6dae1;
+    --link-color: #1769aa;
+    --rule-color: #ddd;
+}
+body[data-theme="dark"] {
+    color-scheme: dark;
+    --page-background: #1e1f22;
+    --text-color: #e6e8eb;
+    --code-background: #2b2d31;
+    --blockquote-border: #555b66;
+    --blockquote-color: #b7bdc7;
+    --table-border: #454951;
+    --link-color: #7ab8ff;
+    --rule-color: #454951;
+}
+body[data-theme="sepia"] {
+    color-scheme: light;
+    --page-background: #f4ecd8;
+    --text-color: #433522;
+    --code-background: #e9dec5;
+    --blockquote-border: #b8a889;
+    --blockquote-color: #66573f;
+    --table-border: #cfc1a6;
+    --link-color: #79521c;
+    --rule-color: #cfc1a6;
+}
 body {
     font-family: "Segoe UI", Arial, sans-serif;
     font-size: 15px;
     line-height: 1.7;
-    color: #20242b;
-    background: #fff;
+    color: var(--text-color);
+    background: var(--page-background);
     margin: 0;
     padding: 24px;
     overflow-wrap: anywhere;
     overflow-anchor: none;
 }
 main { max-width: 950px; margin: 0 auto; }
+main ::selection { background: #b9d7ff; }
 h1, h2, h3, h4 { line-height: 1.35; margin-top: 1.5em; }
-pre { padding: 14px; overflow-x: auto; background: #f2f4f7; border-radius: 6px; }
-code { font-family: Consolas, monospace; background: #f2f4f7; padding: 2px 4px; border-radius: 3px; }
+pre { padding: 14px; overflow-x: auto; background: var(--code-background); border-radius: 6px; }
+code { font-family: Consolas, monospace; background: var(--code-background); padding: 2px 4px; border-radius: 3px; }
 pre code { padding: 0; }
-blockquote { margin-left: 0; padding-left: 16px; border-left: 3px solid #c8ced8; color: #535b68; }
+blockquote { margin-left: 0; padding-left: 16px; border-left: 3px solid var(--blockquote-border); color: var(--blockquote-color); }
 table { border-collapse: collapse; max-width: 100%; }
-th, td { border: 1px solid #d6dae1; padding: 7px 10px; }
+th, td { border: 1px solid var(--table-border); padding: 7px 10px; }
 img { max-width: 100%; height: auto; }
-a { color: #1769aa; }
-hr { border: none; border-top: 1px solid #ddd; }
+a { color: var(--link-color); }
+hr { border: none; border-top: 1px solid var(--rule-color); }
 .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
 </style>
 </head>
-<body>
+<body data-theme="__PREVIEW_THEME__">
 <main>
 <!-- MARKDOWN_CONTENT -->
 </main>
+<script>
+window.syncEditorSelection = (selectedText) => {
+    const main = document.querySelector("main");
+    const selection = window.getSelection();
+    if (!main || !selection) return;
+    selection.removeAllRanges();
+    if (!selectedText) return;
+
+    const cleanMarkdown = (text) => text
+        .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+        .replace(/(\*\*|__|~~|`|[*_])/g, "")
+        .replace(/^#{1,6}\s+/gm, "");
+    const normalize = (text) => text.replace(/\s+/g, " ").trim();
+    let flattened = "";
+    const positions = [];
+    const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT);
+    const blockTags = new Set([
+        "BLOCKQUOTE", "DIV", "H1", "H2", "H3", "H4", "H5", "H6",
+        "LI", "P", "PRE", "TD", "TH"
+    ]);
+    const blockParent = (textNode) => {
+        let element = textNode.parentElement;
+        while (element && element !== main && !blockTags.has(element.tagName)) {
+            element = element.parentElement;
+        }
+        return element;
+    };
+    let previousBlock = null;
+    let node;
+    while ((node = walker.nextNode())) {
+        const currentBlock = blockParent(node);
+        if (previousBlock && currentBlock !== previousBlock &&
+            flattened && !flattened.endsWith(" ")) {
+            flattened += " ";
+            positions.push({node, offset: 0});
+        }
+        previousBlock = currentBlock;
+        const value = node.nodeValue || "";
+        for (let offset = 0; offset < value.length; offset += 1) {
+            const character = value[offset];
+            if (/\s/.test(character)) {
+                if (!flattened || flattened.endsWith(" ")) continue;
+                flattened += " ";
+            } else {
+                flattened += character;
+            }
+            positions.push({node, offset});
+        }
+    }
+
+    const exactTarget = normalize(selectedText);
+    const markdownTarget = normalize(cleanMarkdown(selectedText));
+    const start = flattened.indexOf(exactTarget);
+    const target = start >= 0 ? exactTarget : markdownTarget;
+    const matchStart = start >= 0 ? start : flattened.indexOf(target);
+    if (!target || matchStart < 0 || !positions[matchStart] ||
+        !positions[matchStart + target.length - 1]) {
+        return;
+    }
+    const range = document.createRange();
+    range.setStart(positions[matchStart].node, positions[matchStart].offset);
+    const end = positions[matchStart + target.length - 1];
+    range.setEnd(end.node, end.offset + 1);
+    selection.addRange(range);
+};
+</script>
 <script src="__KATEX_JS__"></script>
 <script src="__KATEX_RENDER__"></script>
 <script>
@@ -497,6 +788,7 @@ if (typeof renderMathInElement === "function") {
             .replace("__KATEX_CSS__", css_url)
             .replace("__KATEX_JS__", js_url)
             .replace("__KATEX_RENDER__", render_url)
+            .replace("__PREVIEW_THEME__", self.preview_theme)
             .replace("<!-- MARKDOWN_CONTENT -->", body)
         )
         self._preview_loading = True
@@ -528,6 +820,7 @@ if (typeof renderMathInElement === "function") {
     if (!main || !base) return;
     const scrollY = window.scrollY;
     base.href = {json.dumps(base_url)};
+    document.body.dataset.theme = {json.dumps(self.preview_theme)};
     main.innerHTML = {json.dumps(body)};
     if (typeof renderMathInElement === "function") {{
         renderMathInElement(main, {{
@@ -543,6 +836,11 @@ if (typeof renderMathInElement === "function") {
             ],
             throwOnError: false
         }});
+    }}
+    if (window.syncEditorSelection) {{
+        window.syncEditorSelection(
+            {json.dumps(self.editor.textCursor().selectedText().replace(chr(0x2029), chr(10)))}
+        );
     }}
     window.scrollTo(0, scrollY);
 }})();"""
