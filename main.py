@@ -8,6 +8,7 @@ from PySide6.QtCore import QEvent, QSettings, QTimer, Qt, QUrl
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
+    QDesktopServices,
     QFont,
     QIcon,
     QKeySequence,
@@ -387,6 +388,18 @@ class SigmaMD(QMainWindow):
             )
             preview_theme_group.addAction(action)
             preview_theme_menu.addAction(action)
+
+        author_action = self.menuBar().addAction("&Author")
+        author_action.triggered.connect(self.open_author_page)
+
+    def open_author_page(self):
+        QMessageBox.information(
+            self, APP_NAME, "William cảm ơn bạn đã sử dụng phần mềm."
+        )
+        if not QDesktopServices.openUrl(QUrl("https://github.com/williamlisci")):
+            QMessageBox.warning(
+                self, APP_NAME, "Không thể mở trang GitHub trong trình duyệt."
+            )
 
     def set_preview_theme(self, theme: str):
         if theme not in PREVIEW_THEMES or theme == self.preview_theme:
