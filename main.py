@@ -86,6 +86,9 @@ class SigmaMD(QMainWindow):
         self.editor = QPlainTextEdit()
         self.editor.setPlaceholderText("Viết nội dung Markdown tại đây...")
         self.editor.setFont(QFont("Consolas", 11))
+        self.editor.setTabStopDistance(
+            self.editor.fontMetrics().horizontalAdvance("  ")
+        )
         self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         self.editor.cursorPositionChanged.connect(
             self.update_selection_toolbar
