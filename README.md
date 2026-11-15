@@ -2,6 +2,8 @@
 
 A lightweight Markdown editor for Windows 11 with live Markdown preview and offline LaTeX rendering powered by KaTeX. SigmaMD supports opening a Markdown file passed by Windows when the file is associated with the app.
 
+**Current version: 1.0.10**
+
 ## Download
 
 visit the [Releases page](https://github.com/williamlisci/SigmaMD/releases) to see all versions.
@@ -14,6 +16,7 @@ visit the [Releases page](https://github.com/williamlisci/SigmaMD/releases) to s
 - Automatically save changes to an open Markdown file after 5 seconds; toggle autosave from the **File** menu.
 - Drag and drop local `.md` or `.markdown` files onto the editor or preview pane to open them.
 - Live Markdown preview updates immediately as you edit.
+- Toggle the preview from **View > Show Preview** or the editor's right-click menu.
 - Synchronized scrolling: scroll either the editor or preview to follow the same relative position in the document.
 - Editing while reading updates the preview in place without resetting its current scroll position.
 - Find text in the editor with **Edit > Find** or **Ctrl+F**, then move between matches with **Next** and **Previous**.

@@ -62,6 +62,9 @@ class SigmaMD(QMainWindow):
         self.preview_theme = (
             saved_theme if saved_theme in PREVIEW_THEMES else "light"
         )
+        self.preview_visible = self.settings.value(
+            "preview_visible", False, type=bool
+        )
         self._loading_file = False
         self.autosave_enabled = True
         self._preview_ready = False
@@ -90,6 +93,12 @@ class SigmaMD(QMainWindow):
             self.editor.fontMetrics().horizontalAdvance("  ")
         )
         self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.editor.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.editor.customContextMenuRequested.connect(
+            self.show_editor_context_menu
+        )
         self.editor.cursorPositionChanged.connect(
             self.update_selection_toolbar
         )
@@ -133,6 +142,7 @@ class SigmaMD(QMainWindow):
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([600, 600])
+        self.preview.setVisible(self.preview_visible)
         self.setCentralWidget(splitter)
         self._create_selection_toolbar()
         self.statusBar().showMessage("Sẵn sàng")
@@ -377,6 +387,13 @@ class SigmaMD(QMainWindow):
         )
 
         view_menu = self.menuBar().addMenu("&View")
+        self.preview_action = QAction("Show Preview", self)
+        self.preview_action.setCheckable(True)
+        self.preview_action.setChecked(self.preview_visible)
+        self.preview_action.toggled.connect(self.set_preview_visible)
+        view_menu.addAction(self.preview_action)
+        view_menu.addSeparator()
+
         preview_theme_menu = view_menu.addMenu("Preview Theme")
         preview_theme_group = QActionGroup(self)
         preview_theme_group.setExclusive(True)
@@ -394,6 +411,17 @@ class SigmaMD(QMainWindow):
 
         author_action = self.menuBar().addAction("&Author")
         author_action.triggered.connect(self.open_author_page)
+
+    def show_editor_context_menu(self, position):
+        menu = self.editor.createStandardContextMenu()
+        menu.addSeparator()
+        menu.addAction(self.preview_action)
+        menu.exec(self.editor.viewport().mapToGlobal(position))
+
+    def set_preview_visible(self, visible: bool):
+        self.preview_visible = visible
+        self.preview.setVisible(visible)
+        self.settings.setValue("preview_visible", visible)
 
     def open_author_page(self):
         QMessageBox.information(
