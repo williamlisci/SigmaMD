@@ -87,6 +87,9 @@ The application folder is generated under `dist/SigmaMD/`.
 
 Place your Windows icon at `assets/SigmaMD.ico` before building. To create a Windows installer, open `SigmaMD.iss` with Inno Setup Compiler and compile it. The installer expects that icon file and packages the application folder from `dist/SigmaMD/`.
 
+***`You must first run the PyInstaller command to generate the `dist/SigmaMD/` directory, which contains the compiled source code, dependencies, and resources.
+If you have not yet run the PyInstaller command to create the `dist/SigmaMD/` directory, attempting to compile the `.iss` file using Inno Setup Compiler will result in an error stating that the source files cannot be found, and the creation of the installer (`.exe` setup file) will fail.`***
+
 ## Open Markdown files by double-clicking
 
 The installer registers SigmaMD as an available handler for `.md` and `.markdown` files. Windows 11 may require a one-time default-app selection:
