@@ -4,7 +4,17 @@ from pathlib import Path
 
 import markdown
 
-from PySide6.QtCore import QEvent, QSettings, QTimer, Qt, QUrl
+from PySide6.QtCore import (
+    QEvent,
+    QObject,
+    QRunnable,
+    QSettings,
+    QThreadPool,
+    QTimer,
+    Qt,
+    QUrl,
+    Signal,
+)
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -53,6 +63,39 @@ def application_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
+class MarkdownRenderSignals(QObject):
+    finished = Signal(int, str)
+    failed = Signal(int, str)
+
+
+class MarkdownRenderTask(QRunnable):
+    def __init__(self, generation: int, source: str):
+        super().__init__()
+        self.generation = generation
+        self.source = source
+        self.signals = MarkdownRenderSignals()
+
+    def run(self):
+        try:
+            body = markdown.markdown(
+                self.source,
+                extensions=[
+                    "fenced_code",
+                    "tables",
+                    "sane_lists",
+                    "pymdownx.tilde",
+                    "pymdownx.arithmatex",
+                ],
+                extension_configs={
+                    "pymdownx.arithmatex": {"generic": True},
+                },
+            )
+        except Exception as error:
+            self.signals.failed.emit(self.generation, str(error))
+            return
+        self.signals.finished.emit(self.generation, body)
+
+
 class SigmaMD(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -71,11 +114,16 @@ class SigmaMD(QMainWindow):
         self._preview_loading = False
         self._preview_template_loading = False
         self._pending_preview_body: str | None = None
+        self._preview_generation = 0
+        self._preview_rendering = False
+        self._pending_preview_render: tuple[int, str] | None = None
+        self._preview_pool = QThreadPool(self)
         self._syncing_editor_scroll = False
         self._editor_scroll_generation = 0
         self._preview_scroll_generation = 0
         self.find_dialog = None
         self.find_input = None
+        self.replace_input = None
         self.find_case_sensitive = None
         self.find_status = None
 
@@ -89,6 +137,7 @@ class SigmaMD(QMainWindow):
         self.editor = QPlainTextEdit()
         self.editor.setPlaceholderText("Viết nội dung Markdown tại đây...")
         self.editor.setFont(QFont("Consolas", 11))
+        self.editor.document().setDocumentMargin(20)
         self.editor.setTabStopDistance(
             self.editor.fontMetrics().horizontalAdvance("  ")
         )
@@ -362,6 +411,12 @@ class SigmaMD(QMainWindow):
             QKeySequence.StandardKey.Find,
             self.show_find_dialog,
         )
+        self.create_action(
+            edit_menu,
+            "Find and &Replace...",
+            QKeySequence.StandardKey.Replace,
+            self.show_find_dialog,
+        )
         edit_menu.addSeparator()
         self.create_action(
             edit_menu, "Undo", QKeySequence.StandardKey.Undo, self.editor.undo
@@ -447,7 +502,7 @@ class SigmaMD(QMainWindow):
     def show_find_dialog(self):
         if self.find_dialog is None:
             self.find_dialog = QDialog(self)
-            self.find_dialog.setWindowTitle("Find")
+            self.find_dialog.setWindowTitle("Find and Replace")
             self.find_dialog.setWindowModality(Qt.WindowModality.NonModal)
 
             layout = QVBoxLayout(self.find_dialog)
@@ -457,6 +512,12 @@ class SigmaMD(QMainWindow):
             self.find_input.setClearButtonEnabled(True)
             self.find_input.returnPressed.connect(self.find_next)
             layout.addWidget(self.find_input)
+
+            layout.addWidget(QLabel("Replace with:", self.find_dialog))
+            self.replace_input = QLineEdit(self.find_dialog)
+            self.replace_input.setClearButtonEnabled(True)
+            self.replace_input.returnPressed.connect(self.replace_current)
+            layout.addWidget(self.replace_input)
 
             self.find_case_sensitive = QCheckBox(
                 "Match case", self.find_dialog
@@ -473,6 +534,12 @@ class SigmaMD(QMainWindow):
             next_button = QPushButton("Next", self.find_dialog)
             next_button.clicked.connect(self.find_next)
             buttons.addWidget(next_button)
+            replace_button = QPushButton("Replace", self.find_dialog)
+            replace_button.clicked.connect(self.replace_current)
+            buttons.addWidget(replace_button)
+            replace_all_button = QPushButton("Replace All", self.find_dialog)
+            replace_all_button.clicked.connect(self.replace_all)
+            buttons.addWidget(replace_all_button)
             close_button = QPushButton("Close", self.find_dialog)
             close_button.clicked.connect(self.find_dialog.hide)
             buttons.addWidget(close_button)
@@ -487,17 +554,17 @@ class SigmaMD(QMainWindow):
         self.find_dialog.activateWindow()
         self.find_input.setFocus()
 
-    def find_next(self):
-        self.find_in_editor()
+    def find_next(self) -> bool:
+        return self.find_in_editor()
 
-    def find_previous(self):
-        self.find_in_editor(backward=True)
+    def find_previous(self) -> bool:
+        return self.find_in_editor(backward=True)
 
-    def find_in_editor(self, backward=False):
+    def find_in_editor(self, backward: bool = False) -> bool:
         search_text = self.find_input.text()
         if not search_text:
             self.find_status.clear()
-            return
+            return False
 
         flags = QTextDocument.FindFlag(0)
         if backward:
@@ -507,7 +574,7 @@ class SigmaMD(QMainWindow):
 
         if self.editor.find(search_text, flags):
             self.find_status.clear()
-            return
+            return True
 
         cursor = self.editor.textCursor()
         cursor.movePosition(
@@ -518,9 +585,65 @@ class SigmaMD(QMainWindow):
         self.editor.setTextCursor(cursor)
         if self.editor.find(search_text, flags):
             self.find_status.clear()
-            return
+            return True
 
         self.find_status.setText("No matches found")
+        return False
+
+    def replace_current(self):
+        search_text = self.find_input.text()
+        if not search_text:
+            self.find_status.clear()
+            return
+
+        cursor = self.editor.textCursor()
+        flags = QTextDocument.FindFlag(0)
+        if self.find_case_sensitive.isChecked():
+            flags |= QTextDocument.FindFlag.FindCaseSensitively
+        search_cursor = QTextCursor(self.editor.document())
+        search_cursor.setPosition(cursor.selectionStart())
+        match = self.editor.document().find(search_text, search_cursor, flags)
+        matches_selection = (
+            not match.isNull()
+            and match.selectionStart() == cursor.selectionStart()
+            and match.selectionEnd() == cursor.selectionEnd()
+        )
+        if not matches_selection and not self.find_next():
+            return
+
+        cursor = self.editor.textCursor()
+        cursor.insertText(self.replace_input.text())
+        self.editor.setTextCursor(cursor)
+        self.find_next()
+
+    def replace_all(self):
+        search_text = self.find_input.text()
+        if not search_text:
+            self.find_status.clear()
+            return
+
+        flags = QTextDocument.FindFlag(0)
+        if self.find_case_sensitive.isChecked():
+            flags |= QTextDocument.FindFlag.FindCaseSensitively
+
+        document = self.editor.document()
+        cursor = QTextCursor(document)
+        replaced_count = 0
+        while True:
+            match = document.find(search_text, cursor, flags)
+            if match.isNull():
+                break
+            match.insertText(self.replace_input.text())
+            cursor = match
+            replaced_count += 1
+
+        if replaced_count:
+            self.editor.setTextCursor(cursor)
+            self.find_status.setText(
+                f"Replaced {replaced_count} occurrence(s)"
+            )
+        else:
+            self.find_status.setText("No matches found")
 
     def _install_drop_filters(self, root: QWidget):
         """Install drag/drop interception on a widget and its current children."""
@@ -609,21 +732,42 @@ class SigmaMD(QMainWindow):
 
     def update_preview(self):
         source = self.editor.toPlainText()
-        body = markdown.markdown(
-            source,
-            extensions=[
-                "fenced_code",
-                "tables",
-                "sane_lists",
-                "pymdownx.tilde",
-                "pymdownx.arithmatex",
-            ],
-            extension_configs={
-                "pymdownx.arithmatex": {"generic": True},
-            },
-        )
-        self._pending_preview_body = body
+        self._preview_generation += 1
+        request = (self._preview_generation, source)
+        if self._preview_rendering:
+            self._pending_preview_render = request
+            return
+        self._start_markdown_render(*request)
 
+    def _start_markdown_render(self, generation: int, source: str):
+        self._preview_rendering = True
+        task = MarkdownRenderTask(generation, source)
+        task.signals.finished.connect(self._on_markdown_rendered)
+        task.signals.failed.connect(self._on_markdown_render_failed)
+        self._preview_pool.start(task)
+
+    def _on_markdown_rendered(self, generation: int, body: str):
+        self._preview_rendering = False
+        if generation == self._preview_generation:
+            self._pending_preview_body = body
+            self._display_preview(body)
+        self._start_pending_preview_render()
+
+    def _on_markdown_render_failed(self, generation: int, error: str):
+        self._preview_rendering = False
+        if generation == self._preview_generation:
+            self.statusBar().showMessage(
+                f"Không thể cập nhật preview: {error}", 5000
+            )
+        self._start_pending_preview_render()
+
+    def _start_pending_preview_render(self):
+        request = self._pending_preview_render
+        self._pending_preview_render = None
+        if request and request[0] == self._preview_generation:
+            self._start_markdown_render(*request)
+
+    def _display_preview(self, body: str):
         katex_dir = application_dir() / "assets" / "katex"
         css_file = katex_dir / "katex.min.css"
         js_file = katex_dir / "katex.min.js"
@@ -804,19 +948,21 @@ window.syncEditorSelection = (selectedText) => {
 <script src="__KATEX_RENDER__"></script>
 <script>
 if (typeof renderMathInElement === "function") {
-    renderMathInElement(document.querySelector("main"), {
-        delimiters: [
-            {left: "$$", right: "$$", display: true},
-            {left: "\\[", right: "\\]", display: true},
-            {left: "\\(", right: "\\)", display: false},
-            {left: "$", right: "$", display: false}
-        ],
-        ignoredTags: [
-            "script", "noscript", "style", "textarea", "pre",
-            "code", "option"
-        ],
-        throwOnError: false
-    });
+    if (document.querySelector("main .arithmatex")) {
+        renderMathInElement(document.querySelector("main"), {
+            delimiters: [
+                {left: "$$", right: "$$", display: true},
+                {left: "\\[", right: "\\]", display: true},
+                {left: "\\(", right: "\\)", display: false},
+                {left: "$", right: "$", display: false}
+            ],
+            ignoredTags: [
+                "script", "noscript", "style", "textarea", "pre",
+                "code", "option"
+            ],
+            throwOnError: false
+        });
+    }
 } else {
     document.querySelector("main").insertAdjacentHTML(
         "afterbegin",
@@ -866,7 +1012,8 @@ if (typeof renderMathInElement === "function") {
     base.href = {json.dumps(base_url)};
     document.body.dataset.theme = {json.dumps(self.preview_theme)};
     main.innerHTML = {json.dumps(body)};
-    if (typeof renderMathInElement === "function") {{
+    if ({str("arithmatex" in body).lower()} &&
+        typeof renderMathInElement === "function") {{
         renderMathInElement(main, {{
             delimiters: [
                 {{left: "$$", right: "$$", display: true}},

@@ -19,8 +19,8 @@ visit the [Releases page](https://github.com/williamlisci/SigmaMD/releases) to s
 - Toggle the preview from **View > Show Preview** or the editor's right-click menu.
 - Synchronized scrolling: scroll either the editor or preview to follow the same relative position in the document.
 - Editing while reading updates the preview in place without resetting its current scroll position.
-- Find text in the editor with **Edit > Find** or **Ctrl+F**, then move between matches with **Next** and **Previous**.
-- Search can optionally match letter case, wraps around the document, and starts with selected text when the Find dialog opens.
+- Find and replace text in the editor with **Edit > Find** (**Ctrl+F**) or **Edit > Find and Replace** (**Ctrl+H**).
+- Search can optionally match letter case, wraps around the document, and starts with selected text when the Find dialog opens; replace one match or all matches at once.
 - Show a message when the search text has no matches.
 - Render LaTeX math using locally bundled KaTeX.
 - Support common inline and display math delimiters: `$...$`, `\\(...\\)`, `$$...$$`, and `\\[...\\]`.
