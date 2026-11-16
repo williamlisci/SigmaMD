@@ -203,7 +203,7 @@ class SigmaMD(QMainWindow):
         self.preview_timer.timeout.connect(self.update_preview)
         self.autosave_timer = QTimer(self)
         self.autosave_timer.setSingleShot(True)
-        self.autosave_timer.setInterval(5000)
+        self.autosave_timer.setInterval(1000)
         self.autosave_timer.timeout.connect(self.autosave_file)
         self.editor.textChanged.connect(self.schedule_autosave)
         self.editor.document().modificationChanged.connect(
@@ -371,16 +371,6 @@ class SigmaMD(QMainWindow):
             file_menu, "&Open...", QKeySequence.StandardKey.Open, self.open_file
         )
         file_menu.addSeparator()
-        self.restore_session_action = self.create_action(
-            file_menu,
-            "Restore Previous Session",
-            None,
-            self.restore_previous_session,
-        )
-        self.restore_session_action.setEnabled(
-            bool(self.settings.value("last_opened_file", "", type=str))
-        )
-        file_menu.addSeparator()
         self.create_action(
             file_menu, "&Save", QKeySequence.StandardKey.Save, self.save_file
         )
@@ -393,7 +383,7 @@ class SigmaMD(QMainWindow):
         file_menu.addSeparator()
         self.autosave_action = self.create_action(
             file_menu,
-            "Autosave after 5 seconds",
+            "Autosave after 1 second",
             None,
             self.set_autosave_enabled,
         )
@@ -1131,11 +1121,6 @@ if (typeof renderMathInElement === "function") {
         if path:
             self.open_path(path)
 
-    def restore_previous_session(self):
-        path = self.settings.value("last_opened_file", "", type=str)
-        if path:
-            self.open_path(path)
-
     def open_path(self, file_path: str | Path) -> bool:
         """Open a Markdown file supplied by the dialog or Windows file association."""
         path = Path(file_path).expanduser()
@@ -1158,7 +1143,6 @@ if (typeof renderMathInElement === "function") {
             return False
 
         self.current_path = path.resolve()
-        self.remember_current_file()
         self._loading_file = True
         self.editor.setPlainText(content)
         self.editor.document().setModified(False)
@@ -1167,12 +1151,6 @@ if (typeof renderMathInElement === "function") {
         self.update_preview()
         self.statusBar().showMessage(f"Opened: {self.current_path}", 4000)
         return True
-
-    def remember_current_file(self):
-        if self.current_path is None:
-            return
-        self.settings.setValue("last_opened_file", str(self.current_path))
-        self.restore_session_action.setEnabled(True)
 
     def save_file(self, is_autosave: bool = False):
         if self.current_path is None:
@@ -1215,7 +1193,6 @@ if (typeof renderMathInElement === "function") {
             self.current_path = old_path
             self.update_window_title()
             return False
-        self.remember_current_file()
         self.update_preview()
         return True
 
@@ -1238,13 +1215,6 @@ if __name__ == "__main__":
     window.show()
 
     if len(sys.argv) > 1:
-        # A file explicitly opened from Windows takes precedence over the session.
         QTimer.singleShot(0, lambda path=sys.argv[1]: window.open_path(path))
-    else:
-        previous_file = window.settings.value("last_opened_file", "", type=str)
-        if previous_file:
-            QTimer.singleShot(
-                0, lambda path=previous_file: window.open_path(path)
-            )
 
     sys.exit(app.exec())
