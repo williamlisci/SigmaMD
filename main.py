@@ -142,6 +142,7 @@ class SigmaMD(QMainWindow):
             self.editor.fontMetrics().horizontalAdvance("  ")
         )
         self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.editor.document().setModified(False)
         self.editor.setContextMenuPolicy(
             Qt.ContextMenuPolicy.CustomContextMenu
         )
